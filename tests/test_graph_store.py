@@ -177,3 +177,37 @@ class TestStats:
         assert stats["symbols"] == 2
         assert stats["edges"] == 1
 
+
+class TestBatchWrites:
+    def test_upsert_edges_last_duplicate_wins_like_row_by_row(self, store):
+        store.upsert_edges([
+            Edge("a.py::f", "b.py::g", "CALLS", weight=0.5),
+            Edge("a.py::f", "b.py::g", "CALLS", weight=1.0),
+        ])
+        assert [e.weight for e in store.edges_from("a.py::f")] == [1.0]
+
+    def test_batches_larger_than_one_statement(self, store):
+        syms = [SymbolNode(f"m.py::f{i}", f"f{i}", "function", "m.py", i + 1, None) for i in range(500)]
+        edges = [Edge(f"m.py::f{i}", f"m.py::f{i + 1}", "CALLS") for i in range(499)]
+        store.upsert_symbols(syms)
+        store.upsert_edges(edges)
+        assert store.stats()["symbols"] == 500
+        assert store.stats()["edges"] == 499
+
+    def test_symbols_by_name_map_matches_symbols_by_name(self, store):
+        store.upsert_symbols([
+            SymbolNode("b.py::add", "add", "function", "b.py", 1, None),
+            SymbolNode("a.py::add", "add", "function", "a.py", 3, None),
+            SymbolNode("a.py::sub", "sub", "function", "a.py", 5, None),
+        ])
+        by_name = store.symbols_by_name_map()
+        for name in ("add", "sub"):
+            assert [s.qualified_name for s in by_name[name]] == [
+                s.qualified_name for s in store.symbols_by_name(name)
+            ]
+
+    def test_empty_batches_are_noops(self, store):
+        store.upsert_symbols([])
+        store.upsert_edges([])
+        store.upsert_files([])
+        assert store.stats() == {"files": 0, "symbols": 0, "edges": 0}
