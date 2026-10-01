@@ -294,10 +294,15 @@ class GraphStore:
 
     def delete_edges_for_file(self, file_path: str):
         with self._lock:
-            prefix = file_path + "::"
+            # Range scans on the indexed columns: every qualified name starting
+            # with "file::" sorts in ["file::", "file:;"). Unlike LIKE, this uses
+            # idx_edges_source/target and is exact (no case folding, no '_' wildcard).
+            low, high = file_path + "::", file_path + ":;"
             self._conn.execute(
-                "DELETE FROM edges WHERE source_qn LIKE ? OR target_qn LIKE ?",
-                (prefix + "%", prefix + "%"),
+                "DELETE FROM edges WHERE source_qn >= ? AND source_qn < ?", (low, high)
+            )
+            self._conn.execute(
+                "DELETE FROM edges WHERE target_qn >= ? AND target_qn < ?", (low, high)
             )
             if not self._in_transaction:
                 self._conn.commit()

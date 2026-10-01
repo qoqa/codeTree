@@ -117,6 +117,23 @@ class TestEdgeCRUD:
         assert len(store.edges_from("a.py::foo")) == 0
         assert len(store.edges_from("c.py::baz")) == 1
 
+    def test_delete_edges_for_file_removes_incoming_edges(self, store):
+        store.upsert_edge(Edge("b.py::caller", "a.py::foo", "CALLS"))
+        store.delete_edges_for_file("a.py")
+        assert store.edges_to("a.py::foo") == []
+
+    def test_delete_edges_for_file_is_exact_not_like_pattern(self, store):
+        # '_' is a LIKE wildcard and LIKE folds ASCII case — neither may leak.
+        store.upsert_edge(Edge("my_file.py::foo", "x.py::bar", "CALLS"))
+        store.upsert_edge(Edge("myXfile.py::foo", "x.py::bar", "CALLS"))
+        store.upsert_edge(Edge("My_File.py::foo", "x.py::bar", "CALLS"))
+        store.upsert_edge(Edge("my_file.py.bak::foo", "x.py::bar", "CALLS"))
+        store.delete_edges_for_file("my_file.py")
+        assert store.edges_from("my_file.py::foo") == []
+        assert len(store.edges_from("myXfile.py::foo")) == 1
+        assert len(store.edges_from("My_File.py::foo")) == 1
+        assert len(store.edges_from("my_file.py.bak::foo")) == 1
+
 
 class TestFileCRUD:
     def test_upsert_and_get_file(self, store):
@@ -159,3 +176,4 @@ class TestStats:
         assert stats["files"] == 1
         assert stats["symbols"] == 2
         assert stats["edges"] == 1
+
